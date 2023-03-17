@@ -1,7 +1,12 @@
+require('dotenv').config()
+require('./mongo')
+
 const express = require('express')
 const morgan = require('morgan')
 const app = express()
 const cors = require('cors')
+const Person = require('./models/Person')
+
 
 const requestLogger = (request, response, next) => {
   console.log('Method:', request.method)
@@ -11,9 +16,8 @@ const requestLogger = (request, response, next) => {
   next()
 }
 
-const unknownEndpoint = (request, response) => {
-  response.status(404).send({ error: 'unknown endpoint' })
-}
+const unknownEndpoint = require('./unknownError')
+const handleError = require('./handleErrors')
 
 morgan.token('body', req => {
   return JSON.stringify(req.body)
@@ -24,32 +28,33 @@ app.use(express.json())
 app.use(cors())
 app.use(express.static('build'))
 
-let persons = [
-  {
-    id: 1,
-    name: 'Arto Hellas',
-    phone: '12039-324'
-  },
-  {
-    id: 2,
-    name: 'Ada Lovecand',
-    phone: '45-348'
-  },
-  {
-    id: 3,
-    name: 'Dan Abraco',
-    phone: '487-2342'
-  },
-  {
-    id: 4,
-    name: 'Mary Popinks',
-    phone: '0042-03423'
-  }
-]
+// let persons = [
+//   {
+//     id: 1,
+//     name: 'Arto Hellas',
+//     phone: '12039-324'
+//   },
+//   {
+//     id: 2,
+//     name: 'Ada Lovecand',
+//     phone: '45-348'
+//   },
+//   {
+//     id: 3,
+//     name: 'Dan Abraco',
+//     phone: '487-2342'
+//   },
+//   {
+//     id: 4,
+//     name: 'Mary Popinks',
+//     phone: '0042-03423'
+//   }
+// ]
 
 app.get('/api/persons', (request, response) => {
-  console.log(persons)
-  response.send(persons)
+  Person.find({}).then(persons => {
+    response.json(persons)
+  })
 })
 
 app.get('/info', (request, response) => {
@@ -60,59 +65,82 @@ app.get('/info', (request, response) => {
   response.send(`<div>Phonebook has info for ${personsLength} <br><br> ${timeNow}<div>`)
 })
 
-app.get('/api/persons/:id', (request, response) => {
-  const id = Number(request.params.id)
+app.get('/api/persons/:id', (request, response, next) => {
+  const { id } = request.params
   console.log(id)
 
-  const person = persons.filter(person => person.id === id)
-  person.length > 0
-    ? response.send(person)
-    : response.status(404).end()
+  Person.findById(id).then(person => {
+    if (person) {
+      return response.json(person)
+    } else {
+      return response.status(404).end()
+    }
+  }).catch(err => {
+    next(err)
+  })
 })
 
-app.delete('/api/persons/:id', (request, response) => {
-  const id = Number(request.params.id)
+app.delete('/api/persons/:id', (request, response, next) => {
+  const { id } = request.params
   console.log(id)
 
-  persons = persons.filter(person => person.id !== id)
-  response.status(204).end()
+  Person.findByIdAndRemove(id).then(person =>{
+    return response.status(204).end()
+  }).catch(err =>{
+    next(err)
+  })
+})
+
+app.put('/api/persons/:id', (request, response, next) => {
+  const { id } = request.params
+  const person = request.body
+
+  const newPersonInfo = {
+    name: person.name,
+    phone: person.number
+  }
+
+  Person.findByIdAndUpdate(id, newPersonInfo, { new : true })
+  .then(result => {
+    response.json(result)
+  })
 })
 
 app.post('/api/persons', (request, response) => {
   const body = request.body
 
   console.log(body)
-  console.log(persons.filter(person => {
-    person.name === body.name
-  }))
+  Person.find({}).then(persons => {
+    console.log(persons.filter(person => {
+      person.name === body.name
+    }))
+  
+    if (!body.name || !body.phone) {
+      return response.status(400).json({
+        error: 'name or number missing'
+      })
+    } else if (persons.filter(person => person.name === body.name).length > 0) {
+      return response.status(400).json({
+        error: 'name already in the agenda'
+      })
+    }
 
-  if (!body.name || !body.phone) {
-    return response.status(400).json({
-      error: 'name or number missing'
+    const newPerson = new Person({
+      name: body.name,
+      phone: body.phone
     })
-  } else if (persons.filter(person => person.name === body.name).length > 0) {
-    return response.status(400).json({
-      error: 'name already in the agenda'
+  
+    newPerson.save().then(savedPerson => {
+      response.json(savedPerson)
     })
-  }
-
-  const newId = Math.ceil(Math.random() * 10000)
-  console.log(newId)
-
-  const person = {
-    id: newId,
-    name: body.name,
-    phone: body.phone
-  }
-
-  persons = [...persons, person]
-
-  response.json(person)
+  })
 })
+
+app.use(handleError)
 
 app.use(unknownEndpoint)
 
-const PORT = process.env.PORT || 3001
+const PORT = process.env.PORT
 
 app.listen(PORT)
 console.log(`Server running on port ${PORT}`)

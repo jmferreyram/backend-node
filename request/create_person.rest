@@ -1,7 +1,7 @@
-POST http://localhost:3001/api/persons
+PUT http://localhost:3001/api/persons/640e7f2536f8cec9a960ba35
 Content-Type: application/json
 
 {
-    "name": "Juan Manuel Ferreyra",
-    "phone": "0340234-323"
+    "name": "Juan Manuel Ferreyra Mapero",
+    "phone": "034022-3231242"
 }
